@@ -1,0 +1,8 @@
+cat
+-n -b 
+
+moreÃüÁî
+
+lessÃüÁî
+
+tailÃüÁî
