@@ -4,5 +4,5 @@
 #include <stdio.h>
 int main()
 {
-	printf("hello world\n");
+	printf("YBX is the most hndsome man in NCEPU!\n");
 }

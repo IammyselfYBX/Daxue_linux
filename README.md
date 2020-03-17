@@ -184,3 +184,51 @@ gcc -D
 
 ## 三、Unix,linux核心编程
 [在线视频](https://www.bilibili.com/video/av69981906?p=92)
+
+### 1静态库和共享库——利用 .o 文件
+#### 1)[静态库](3Unix,linux核心编程/day02静态链接库/day02.c)
+静态链接库就是把代码归档——>完全独立，链接之后就可以删除了
+```
+$> ar -r <库文件名> *.o
+
+库文件名:
+    lib开头+库名+.a
+```
+
+链接静态库和.o文件,有三种：
+- 1、强行链接：
+> gcc .o文件 库名称
+
+- 2、双L链接法（重点）
+> gcc .o文件 -l库名 -L库所在目录
+
+- 3、单L链接法
+> gcc .o文件 -l库名称(需要配置环境变量)
+
+#### 2)[动态库](3Unix,linux核心编程/day03共享库/day03.c)
+就是一个地址链接——>使用的时候，必须存在动态链接库
+共享库创建步骤：
+- 1、写源程序.c文件
+- 2、编写生成.o文件
+- 3、生成共享库文件.so
+
+```
+gcc -shared .o文件 -o.so共享库文件
+```
+**一般开发的时候，才有动态链接库**
+
+---
+##### 出错
+1.```error while loading shared libraries: libtest.so: cannot open shared object file: No such file or directory```：需要配置环境变量
+
+![动态链接库需要配置环境变量.png](3Unix,linux核心编程/day03共享库/class/动态链接库需要配置环境变量.png)
+
+2.ldd——查看动态链接库
+
+ldd显示```not a dynamic executable```可以使用```readelf -d```
+
+-d --dynamic           Display the dynamic section (if present)
+![readelf显示共享库.png](3Unix,linux核心编程/day03共享库/class/readelf显示共享库.png)
+
+### 2错误处理
+
