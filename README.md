@@ -831,8 +831,459 @@ exec系列的函数（如execl）
     execl只提供程序不创建新进程
 ```
 
-### 13.
+得出结论：vfork创建出来的子进程一定先于父进程运行
 
+execl：负责启动一个全新的程序
+int execl（char *path,char *cmd,...）；
+第一个参数是程序所在的路径
+第二个参数是执行程序的命令
+...代表0-N个任意参数，一般可以跟选项，参数等，最后以NULL结束！
+
+![execl执行命令.png](3Unix,linux核心编程/3.code/day31创建子进程方法/execl执行命令.png)
+
+### 13.Unix/Linux信号机制
+#### 1)信号机制
+在Unix/Linux使用**信号**，实现软件的中断。
+```
+ctrl+c -> 信号
+段错误 -> 信号
+总线错误 -> 信号
+子进程结束 -> 给父进程发信号
+```
+
+#### 2)中断
+中断是程序终止执行现在的代码，转而执行其他代码
+
+软件中断和硬件中断 
+**软件中断的主要方式就是信号！**
+信号的本质是非负数
+```
+每个信号都有一个宏名称，都以SIG开头
+比如信号2 -> SIGINT
+```
+可以通过```kill -l```查看所有的信号
+![kill-l.png](3Unix,linux核心编程/3.code/day32信号/kill-l.png)
+> 常见的 -9 就是 SIGKILL 信号
+
+这里面有很多信号是 ```+5```, ```-15```类似的信号，原因就是——关于用0做除数：
+```
+整数除以0，会引发浮点数例外，会终止程序！
+浮点数除以0，得到的结果是无穷大
+```
+
+用宏名称不能用整数，因为不同系统数字不一样！
+
+信号的异步处理方式。
+
+信号0有特殊用途，本身不带表任何事情，也不回去处理任何事情,用于测试，是否有权发信号
+
+#### 3)信号是怎么来的？
+硬件故障和函数都可能产生信号！
+
+信号的分类：
+- 不可靠信号
+> 这种信号不支持排队，因此可能丢失，非实时信号，1-31都是不可靠信号
+
+- 可靠信号
+> 支持排队，因此不可能丢失，实时信号，34-64都是可靠信号
+
+#### 4)程序收到信号以后的处理方式：
+- 1、默认处理方式，80%都是退出进程！
+- 2、忽略信号，不做任何处理！
+- 3、程序员可以自定义信号处理方式，只需要写一个信号处理函数
+
+**△信号9不能被忽略**
+
+#### 5)信号处理的实现步骤：
+- 1、写一个信号处理函数
+- 2、用signal/sigacion注册信号处理方式
+```c
+#include <signal.h>
+void (*signal(int sig, void (*func)(int))) (int);
+typedef void (*sighandler_t)(int);
+sighandler_t signal(int signum, sighandler_t handler);
+函数指针的格式：
+    void （*fa）（int）；
+
+        SIG_IGN -> 忽略
+        SIG_DEF -> 默认处理
+```
+
+#### 6)[子进程的信号处理](3Unix,linux核心编程/3.code/day33子进程信号处理/day33.c)
+- 如果子进程是fork创建的，那么子进程完全沿袭父进程对信号处理的方式
+- vfork+execl创建的子进程，父进程默认子进程也默认，父进程忽略子进程也忽略
+
+父进程自定义函数处理，子进程是默认！
+
+原因：vfork+execl创建的子进程代码区没有父进程的处理函数！
+
+#### 7)kill函数——信号发送函数
+发送信号的方法：
+```
+1、用键盘发信号
+2、出错（部分信号）
+3、kill命令发送（全部信号）
+4、信号发送函数（这节课内容）
+```
+```c
+raise() -> 给本进程发任意信号
+kill()  -> 给任意进程发任意信号
+    #include <sys/types.h>
+    #include <signal.h>
+    int kill(pid_t pid, int sig);
+
+lalrm() -> 给本进程发送特定信号（闹钟）
+sigpueue() -> 给任意进程发任意信号，可以附带额外数据（少用）
+```
+
+#### 8)alarm函数
+alarm(参数n)  -> n秒之后产生一个闹钟信号：SIGALRM
+```c
+#include <unistd.h>
+unsigned int alarm(unsigned int seconds);
+
+0代表的是所有的闹钟
+在任何情况下之前设置的闹钟都会被取消
+```
+返回值
+```
+成功返回0
+如果之前有执行的alarm进程，返回差值，下面就是1000 - 3(sleep耽搁的3秒)
+```
+![return.png](3Unix,linux核心编程/3.code/day35alarm/test3返回值/return.png)
+
+#### 9)信号组->信号集
+信号集函数
+```
+1、增加信号
+    sigaddset()  -> 增加一个信号
+    sigfillset() -> 放入所有信号（全部增加）
+2、删除出
+    sigdelset()  -> 删除一个信号
+    sigemptyset()-> 清空信号集
+3、查找信号
+    sigismember()->判断信号是否存在
+```
+```c
+#include <signal.h>
+int sigemptyset(sigset_t *set);
+int sigfillset(sigset_t *set);
+int sigaddset(sigset_t *set, int signum);
+int sigdelset(sigset_t *set, int signum);
+int sigismember(const sigset_t *set, int signum);
+```
+因为 sigset_t 的大小是128字节，所以可以存放信号量是 8 * 128 = 1024 个
+
+#### 10)信号屏蔽 sigprocmask — examine and change blocked signals
+sigprocmask -> 负责信号屏蔽和接触的！
+```c
+#include <signal.h>
+int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+
+参数：
+int how
+    SIG_BLOCK
+        新的加旧的
+    SIG_UNBLOCK
+        旧的减去新的
+    SIG_SETMASK
+        直接替换
+
+const sigset_t *set ——> 代表新的需要屏蔽的信号
+
+sigset_t *oldset ——> 用于传出旧的信号屏蔽（不用传出给0）
+
+int how运算方式：
+    SIG_BLOCK -> 新的+旧的 -> ABC+DEF -> ABCDEF
+    SIG_UNBLOCK -> 旧的-新的 -> ABC-CDE -> ABC
+    SIG_SETMASK -> ABC CDE  -> CDE
+```
+
+### 14.IPC——>进程间通信
+1、文件
+2、信号
+3、管道
+4、共享内存
+5、消息队列  -> △
+6、信号量集（和信号集没有关系）
+7、网络（套接字socket）
+...
+
+共享内存，消息队列和信号量集他们遵守相同的规范叫做XSI IPC
+
+#### 1)管道
+管道：Unix/Linux最古老的IPC方式之一，管道又分为**有名管道**和**无名管道**
+> 有名管道可以用于各种IPC，无名管道只能用于fork创建的父子进程之间的IPC
+
+两个进程需要通信，中间需要媒介，Linux/Unix 早期都是以文件作为媒介，管道还不算一般的文件！！
+
+管道的交互媒介是一种特殊的文件：**管道文件**
+
+#### 2)创建管道——mkfifo
+管道文件必须使用mkfifo命令或者mkfifo函数才能创建，管道文件的后缀.pipe（翻译就是管道）
+```
+$> mkfifo a.pipe
+```
+
+管道文件挂载上去后制作交互的媒介，不存储数据
+
+##### Test
+编写两个程序，一个发送整数0-99，另一个用来接收。要求：每1秒发送一个
+[send](3Unix,linux核心编程/3.code/day38管道文件/send.c)&emsp;&emsp;[accept](3Unix,linux核心编程/3.code/day38管道文件/accept.c)
+
+---
+#### 3)XSI IPC  理论篇
+XSI IPC 是指——> 共享内存，消息队列和信号量集
+> XSI IPC 遵循相同规范，因此使用方法上很相似
+
+##### (1)共同的使用方法：
+###### 1、创建时都需要使用key。
+    key是一个整数，外部程序使用key来获取内核中IPC的结构
+
+###### 2、key生成有三种方法：
+- a、宏 ```IPC_PRIVATE``` 直接做key
+- b、定义一个头文件，把所有的key写在头文件中
+- c、函数```ftok```可以用一个真实存在的目录和一个人工分配的项目ID（0-255）自动生成一个key
+
+###### 3、所有的IPC结构在内核中对应一个唯一的ID，表示每个IPC信号
+
+###### 4、key是用来查找ID的，ID是用来定位IPC结构的！
+    ```函数shmget(key,...);,msgget(key,...);```
+    可以用key获取ID，后续的代码使用ID
+
+###### 5、创建IPC结构需要提供一个操作函数->```msgctl```，他至少包含以下功能：
+- a、IPC_STAT:取IPC结构的相关属性（查看）
+- b、IPC_SET:修改IPC结构的部分属性
+- c、IPC_RMID:删除IPC结构
+> △IPC结构使用完毕一定肯定必须确定能够确保他删除的干干净净，不然就永远在内核里面了！
+
+##### (2)IPC相关命令：
+![IPC命令图.jpg](2Linux_C语言学习材料/4.相关思维导图/IPC命令图.jpg)
+
+###### ipcs:查看IPC结构
+![ipcs_a.png](3Unix,linux核心编程/3.code/day38管道文件/IPC/ipcs_a.png)
+
+###### ipcrm:删除IPC结构
+```
+  -a -> 查看所有
+  -m -> 共享内存
+  -q -> 消息队列
+  -s -> 信号量集
+删除时，需要指定结构ID
+```
+
+#### 4)共享内存
+![共享内存步骤图.jpg](2Linux_C语言学习材料/4.相关思维导图/共享内存步骤图.jpg)
+
+##### 使用共享内存的步骤：
+1、创建key，可以使用头文件，或者定义ftok函数<br>
+2、使用```shmget```，用key创建/获取共享内存ID<br>
+3、```shmat（ID）```挂载(映射)共享内存<br>
+4、正常使用<br>
+5、使用```shmdt脱接```（接触映射）共享内存<br>
+6、保证不再使用的时候，可以删除共享内存！shmctl（IPC_RMID);
+
+#### 5)消息队列
+队列由内核负责创建和维护
+> Windows的消息队列与Linux不同，windows的任何操作都会产生一个消息
+
+##### 消息队列的使用步骤：
+1、```ftok```或者```头文件```定义方式生成key<br>
+2、用key创建/获取消息队列的ID <br>
+```c
+    int msgid = msgget
+```
+3、放入消息/取出消息
+
+```c
+    msgsnd  -> 放入，发送消息
+    msgrcv  -> 取出，接收消息
+```
+
+4、如果确认不再需要使用消息队列，需要删除
+```
+msgctl
+
+msgsnd最后一个参数只有两个值，一个是0，另一个是IPC_NOWAIT
+
+int msgsnd(int msqid, const void *msgp, size_t msgsz, int msgflg);
+
+ssize_t msgrcv(int msqid, void *msgp, size_t msgsz, long msgtyp,
+                      int msgflg);
+```
+
+##### 消息类型
+缺点：和共享内存一样，程序可以随便拿。
+
+消息：消息分为有类型消息和无类型消息
+###### 无类型消息 == 数据，使用任何类型都行，eg：int，double，字符串，结构，联合！
+- 遵守严格先入先出！
+
+###### 有类型消息 == 数据 + 消息类型
+- 必须是**结构体**
+```c
+格式如下：
+struct <name> //消息名称随便取
+{
+  long mtype;  //第一个成员必须是消息类型, mtype值，必须大于0
+  ...//随便写
+}
+```
+```
+msgsnd发送有类型消息的时候，没有特殊要求
+smgrcv接收有类型消息的时候，第四个参数选择要接受的消息类型！
+
+第四个参数的值，可能如下：
+ 1、整数 接收特定类型的消息
+ 2、0接收任意类型的消息（先进先出）
+ 3、负数 接收小鱼等于这个参数绝对值的消息，次序先小后大
+ 
+```
+
+#### 6)信号量集
+**信号量集**和信号一点关系**都没有**，是一个信号的量的**数组**<br>
+**信号量** -> 计时器,这个计时器用于控制访问共享内存资源的最大并行进程数。
+
+##### 计时器的工作方式：
+- 1、自增型：开始计数0，来一个自增1，走一个自减1，到计数最大值不允许再来
+- 2、自减型：开始计数就是最大值，来一个自减1，走一个自增1，计数到0不允许再来
+
+使用多个信号有**信号集**，使用多个信号量，也有**信号量集**
+> 信号量集其实是进程间的调用，**并不是**真正的*互发数据*！
+
+##### 信号量集的编程步骤：
+1、使用```fotk```或者头文件，生成一个key<br>
+2、使用```semget```创建/获取信号量集<br>
+3、使用```semctl```给信号量集中每个信号赋值<br>
+4、使用信号量，```semop```函数<br>
+5、如果不咋使用，可以使用```semctl```函数
+
+semctl初始化信号量集中每个信号量：
+```c
+int semctl(int semid, int semnum, int cmd, ...);    //...表示可变变量
+如果cmd取SETVAL，可以给一个信号量赋值
+semnum参数是信号量的下标，第四个参数就是初始值
+semctl(semid,0,SETVAL,5);
+```
+
+semop函数中的结构如下：
+```c
+struct sembuf
+{
+  unsigned short sem_num; -> 操作信号量的下标
+  short sem_op; -> 对信号量操作方式，-1，0，+1
+  short sem_flg; -> 计数到0后是否阻塞，为0就阻塞，为IPC_NOWIT就不阻塞
+}；
+```
+
+### 15.socket -> 网络套接字
+#### 1)关于Socket编程的概念
+1.流——>数据是一个字节，一个字节传输的，所以形象比喻成为 **流**<br>
+2.连接<br>
+3.阻塞，非阻塞<br>
+4.同步，异步<br>
+5.IP地址<br>
+```
+    ipv4就是32位整数，ipv6就是128位整数
+    192.168.1.1 ——> 点分十进制表示法
+```
+子网掩码用于区分两个IP是不是在同一子网中
+
+IP+端口 才能够数据交互, 端口也是一个整数 **short型**, 0-65535
+
+端口分类：
+> 0-1023：最好不要使用，系统以及使用了其中某些部分<br>
+> 1024-48000：正常使用的端口，很少有部分会被那种的软件使用<br>
+> 48000以后：动态端口，不稳定！
+
+6.字节顺序
+
+#### 2)网络编程在C语言中叫做socket
+socket又分为**本地通讯**和**网络通讯**
+> 本地通信：同一台计算机内部两个进程通信。<br>
+> 网络通信
+
+```c
+socket - create an endpoint for communication
+
+       #include <sys/types.h>          /* See NOTES */
+       #include <sys/socket.h>
+
+       int socket(int domain, int type, int protocol);
+```
+
+#### 3)socket编程 编写步骤：
+###### 1、创建一个socket，使用函数socket函数
+```c
+int socket(int domain, int type, int protocol);
+    返回的是一个叫做socket描述符的东西
+    
+    int domain参数是域，用来选择协议簇
+        PF_UNIX PF_LOCAl PF_FILE
+        这些都代表本地通讯
+        PF_INET ：IPv4网络通讯
+        PF_INET6：IPv6网络通讯
+        注意：PF可以写出AF
+
+    int type用于选择通讯类型
+        SOCK_STREAM  -> 数据流（TCP）
+        SOCK_DGRAM   -> 数据报（UDP）
+
+    int protocol：已经没有任何意义了，给0
+
+RETURN VALUE
+       On success, a file descriptor for the new socket is returned.  On error, -1 is returned, and errno is set appropriately.
+```
+
+###### 2、准备通讯地址（搞文件/IP和端口）
+有三个通讯地址：
+```c
+    struct sockaddr_in ：不存数据，专门做参数类型
+    struct sockaddr_un:存储本地通讯数据
+```
+
+本地通讯使用的是一个文件做IPC媒介，因此存储了socket文件名,socket文件，后缀是.sock
+```c
+#include <sys/un.h>
+struct sockaddr_in
+{
+    int sun_family;     //协议簇
+    char sun_path[];    //文件名（带上路径）
+}；
+
+#include <sys/in.h>
+struct sockaddr_un
+{
+    int sin_family;//协议簇
+    short sin_port;//端口号
+    struct in_addr sin_addr;//IP地址
+};
+```
+
+###### 3、绑定（描述符通讯地址）
+```c
+    bind(sockfa,sockaddr,szieof(addr));
+```
+
+###### 4、通讯
+
+###### 5、关闭socket描述符
+
+客户端的程序：
+步骤与服务器完全一样，除了第三步。第三步把bind换成connect
+
+192.168.1.6
+
+转换IP用函数：inet_addr();
+转换端口号用函数：htons（）；
+#include <arpa/inet.h>
+
+
+
+
+配套电子书 
+英文版：https://pan.baidu.com/s/1PDyTEzizcDV7AfK_e1v4Og
+中文版：https://pan.baidu.com/s/1ymDX8ygGD2TGpmfoEA1M9w
 
 
 

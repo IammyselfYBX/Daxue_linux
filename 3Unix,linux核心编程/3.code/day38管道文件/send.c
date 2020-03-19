@@ -11,8 +11,7 @@ int main()
 		perror("open");
 		return -1;
 	}
-	int i;
-	for(i = 0;i < 100;i++)
+	for(int i = 0;i < 100;i++)
 	{
 		write(fa,&i,sizeof(int));
 		sleep(1);
