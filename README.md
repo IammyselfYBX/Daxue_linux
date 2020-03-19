@@ -1254,36 +1254,47 @@ struct sockaddr_in
 #include <sys/in.h>
 struct sockaddr_un
 {
-    int sin_family;//协议簇
-    short sin_port;//端口号
-    struct in_addr sin_addr;//IP地址
+    int sin_family;             //协议簇
+    short sin_port;             //端口号
+    struct in_addr sin_addr;    //IP地址, i这个结构体就一个元素
 };
 ```
 
-###### 3、绑定（描述符通讯地址）
+###### 3、绑定（描述符通讯地址）本地通讯使用 bind — bind a name to a socket
 ```c
-    bind(sockfa,sockaddr,szieof(addr));
+    #include <sys/socket.h>
+
+    int bind(int socket, const struct sockaddr *address,
+               socklen_t address_len);
+```
+
+###### 3、绑定（描述符通讯地址）网络使用 connect - initiate a connection on a socket
+```c
+    #include <sys/types.h>          /* See NOTES */
+    #include <sys/socket.h>
+
+    int connect(int sockfd, const struct sockaddr *addr,
+                   socklen_t addrlen);
 ```
 
 ###### 4、通讯
 
 ###### 5、关闭socket描述符
 
-客户端的程序：
-步骤与服务器完全一样，除了第三步。第三步把bind换成connect
-
-192.168.1.6
-
-转换IP用函数：inet_addr();
+#### 4)转换IP用函数：inet_addr();
 转换端口号用函数：htons（）；
-#include <arpa/inet.h>
+```c
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <arpa/inet.h>
+
+    int inet_aton(const char *cp, struct in_addr *inp);
+```
 
 
 
 
-配套电子书 
-英文版：https://pan.baidu.com/s/1PDyTEzizcDV7AfK_e1v4Og
-中文版：https://pan.baidu.com/s/1ymDX8ygGD2TGpmfoEA1M9w
+
 
 
 
